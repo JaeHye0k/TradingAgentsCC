@@ -2,6 +2,7 @@
 """Generate a self-contained interactive HTML report from TradingAgentsCC analysis JSON."""
 
 import csv
+import html as _html
 import json
 import os
 import re
@@ -37,11 +38,11 @@ def parse_ohlcv(market_data: str) -> dict:
                 close = float(close_str)
             except ValueError:
                 continue
-            if date_str and close:
+            if date_str and close_str:
                 labels.append(date_str)
                 prices.append(round(close, 2))
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[warn] OHLCV parse failed ({exc})", file=sys.stderr)
     return {"labels": labels, "prices": prices}
 
 
@@ -102,6 +103,7 @@ def detect_decision(final_decision: str) -> tuple[str, str]:
 
 def md_to_html(text: str) -> str:
     """Convert basic markdown subset to HTML (no external parser required)."""
+    text = _html.escape(text)
     text = re.sub(r"^### (.+)$", r"<h3>\1</h3>", text, flags=re.MULTILINE)
     text = re.sub(r"^## (.+)$", r"<h2>\1</h2>", text, flags=re.MULTILINE)
     text = re.sub(r"^# (.+)$", r"<h1>\1</h1>", text, flags=re.MULTILINE)
@@ -128,15 +130,15 @@ def _debate_html(bull_reports: list[str], bear_reports: list[str]) -> str:
     rounds = max(len(bull_reports), len(bear_reports))
     if rounds == 0:
         return '<p class="muted-text">토론 데이터가 없습니다.</p>'
-    html = ""
+    parts = []
     for r in range(rounds):
-        html += f'<details open><summary class="debate-summary">라운드 {r + 1}</summary>\n'
+        parts.append(f'<details open><summary class="debate-summary">라운드 {r + 1}</summary>\n')
         if r < len(bull_reports):
-            html += f'<div class="debate-bull"><h4>🐂 Bull Researcher</h4><div class="report-text">{md_to_html(bull_reports[r])}</div></div>\n'
+            parts.append(f'<div class="debate-bull"><h4>🐂 Bull Researcher</h4><div class="report-text">{md_to_html(bull_reports[r])}</div></div>\n')
         if r < len(bear_reports):
-            html += f'<div class="debate-bear"><h4>🐻 Bear Researcher</h4><div class="report-text">{md_to_html(bear_reports[r])}</div></div>\n'
-        html += "</details>\n"
-    return html
+            parts.append(f'<div class="debate-bear"><h4>🐻 Bear Researcher</h4><div class="report-text">{md_to_html(bear_reports[r])}</div></div>\n')
+        parts.append("</details>\n")
+    return "".join(parts)
 
 
 CSS = """
@@ -229,8 +231,8 @@ details { background: var(--surface); border: 1px solid var(--border); border-ra
 
 
 def generate_html(data: dict, chartjs_src: str | None) -> str:
-    ticker = data["ticker"]
-    date = data["date"]
+    ticker = _html.escape(data["ticker"])
+    date = _html.escape(data["date"])
     r = data["reports"]
 
     ohlcv = parse_ohlcv(data.get("market_data", ""))

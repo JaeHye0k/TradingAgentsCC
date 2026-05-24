@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
-"""Generate a self-contained interactive HTML report from TradingAgentsCC analysis JSON."""
+"""Generate a self-contained interactive HTML report from TradingAgentsCC analysis JSON.
 
-import csv
+Input JSON schema (assembled by SKILL.md Step 7):
+{
+  "ticker": str, "date": str,
+  "market_data":       <fetch_market.py JSON>,
+  "news_data":         <fetch_news.py JSON>,
+  "fundamentals_data": <fetch_fundamentals.py JSON>,
+  "sentiment_data":    <fetch_sentiment.py JSON>,
+  "reports": { ... markdown strings + arrays ... }
+}
+"""
+
 import html as _html
 import json
 import os
-import re
 import sys
 from urllib.request import urlopen
+
+import markdown as _md
 
 CHARTJS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"
 
@@ -22,70 +33,52 @@ def fetch_chartjs() -> str | None:
         return None
 
 
-def parse_ohlcv(market_data: str) -> dict:
-    """Parse OHLCV CSV from fetch_market.py output.
+def build_chart_data(data: dict) -> dict:
+    """Project the analysis JSON into the shape Chart.js needs."""
+    market = data.get("market_data") or {}
+    sentiment = data.get("sentiment_data") or {}
 
-    Returns {"labels": ["2026-05-24", ...], "prices": [195.5, ...]}
-    """
-    lines = [l for l in market_data.splitlines() if not l.startswith("#") and l.strip()]
-    labels, prices = [], []
-    try:
-        reader = csv.DictReader(lines)
-        for row in reader:
-            date_str = (row.get("Date") or row.get("Datetime") or "")[:10]
-            close_str = row.get("Close") or ""
-            try:
-                close = float(close_str)
-            except ValueError:
-                continue
-            if date_str and close_str:
-                labels.append(date_str)
-                prices.append(round(close, 2))
-    except Exception as exc:
-        print(f"[warn] OHLCV parse failed ({exc})", file=sys.stderr)
-    return {"labels": labels, "prices": prices}
+    ph = market.get("price_history") or {}
+    price = {"labels": ph.get("dates", []), "prices": ph.get("close", [])}
 
+    indicators = market.get("indicators") or {}
 
-def parse_indicator(market_data: str, key: str) -> dict:
-    """Parse stockstats indicator values from fetch_market.py output.
+    def _ind(key: str) -> dict:
+        i = indicators.get(key) or {}
+        return {"labels": i.get("dates", []), "values": i.get("values", [])}
 
-    Looks for block starting with '## {key} values from' and extracts
-    lines matching '2026-05-24: 58.3' pattern.
+    rsi = _ind("rsi")
+    macd_line = _ind("macd")
+    macd_sig = _ind("macds")
+    macd_hist = _ind("macdh")
 
-    Returns {"labels": [...chronological...], "values": [...]}
-    """
-    labels, values = [], []
-    in_block = False
-    block_re = re.compile(rf"^## {re.escape(key)} values from", re.IGNORECASE)
-    row_re = re.compile(r"^(\d{4}-\d{2}-\d{2}):\s*([\d.]+)")
+    st = sentiment.get("stocktwits") or {}
+    sent = {
+        "bullish": st.get("bullish", 0),
+        "bearish": st.get("bearish", 0),
+        "unlabeled": st.get("unlabeled", 0),
+    }
 
-    for line in market_data.splitlines():
-        if block_re.match(line):
-            in_block = True
-            continue
-        if in_block and line.startswith("##"):
-            break
-        if in_block:
-            m = row_re.match(line.strip())
-            if m:
-                labels.append(m.group(1))
-                values.append(float(m.group(2)))
+    if not price["labels"]:
+        print("[warn] market_data.price_history.close not found — overview/price/sparkline charts disabled.", file=sys.stderr)
+    if not rsi["labels"]:
+        print("[warn] market_data.indicators.rsi not found — RSI chart disabled.", file=sys.stderr)
+    if not macd_line["labels"]:
+        print("[warn] market_data.indicators.macd not found — MACD chart disabled.", file=sys.stderr)
+    if (sent["bullish"] + sent["bearish"] + sent["unlabeled"]) == 0:
+        print("[warn] sentiment_data.stocktwits empty — sentiment doughnut will be blank.", file=sys.stderr)
 
-    labels.reverse()
-    values.reverse()
-    return {"labels": labels, "values": values}
-
-
-def parse_sentiment(sentiment_data: str) -> dict:
-    """Parse StockTwits Bullish/Bearish/Unlabeled counts.
-
-    Looks for: 'Bullish: 3 (10%) · Bearish: 2 (7%) · Unlabeled: 25'
-    Returns {"bullish": 3, "bearish": 2, "unlabeled": 25}
-    """
-    m = re.search(r"Bullish:\s*(\d+).*?Bearish:\s*(\d+).*?Unlabeled:\s*(\d+)", sentiment_data, re.DOTALL)
-    if m:
-        return {"bullish": int(m.group(1)), "bearish": int(m.group(2)), "unlabeled": int(m.group(3))}
-    return {"bullish": 0, "bearish": 0, "unlabeled": 0}
+    return {
+        "price": price,
+        "rsi": rsi,
+        "macd": {
+            "labels": macd_line["labels"],
+            "macd": macd_line["values"],
+            "signal": macd_sig["values"],
+            "histogram": macd_hist["values"],
+        },
+        "sentiment": sent,
+    }
 
 
 def detect_decision(final_decision: str) -> tuple[str, str]:
@@ -102,18 +95,10 @@ def detect_decision(final_decision: str) -> tuple[str, str]:
 
 
 def md_to_html(text: str) -> str:
-    """Convert basic markdown subset to HTML (no external parser required)."""
-    text = _html.escape(text)
-    text = re.sub(r"^### (.+)$", r"<h3>\1</h3>", text, flags=re.MULTILINE)
-    text = re.sub(r"^## (.+)$", r"<h2>\1</h2>", text, flags=re.MULTILINE)
-    text = re.sub(r"^# (.+)$", r"<h1>\1</h1>", text, flags=re.MULTILINE)
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
-    text = re.sub(r"^- (.+)$", r"<li>\1</li>", text, flags=re.MULTILINE)
-    text = re.sub(r"(<li>.*</li>)", r"<ul>\1</ul>", text, flags=re.DOTALL)
-    paragraphs = [f"<p>{p.strip()}</p>" for p in re.split(r"\n{2,}", text) if p.strip() and not p.strip().startswith("<")]
-    blocks = re.findall(r"<(?:h[123]|ul|p)[^>]*>.*?</(?:h[123]|ul|p)>", text, re.DOTALL)
-    return "\n".join(blocks) if blocks else "\n".join(paragraphs)
+    """Convert markdown to HTML using the python-markdown library."""
+    if not text or not text.strip():
+        return ""
+    return _md.markdown(text, extensions=["extra", "sane_lists"])
 
 
 def _checklist_html(items: list[str], id_prefix: str) -> str:
@@ -183,7 +168,8 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
 .report-text h2 { font-size: 1rem; color: var(--cyan); }
 .report-text h3 { font-size: 0.9rem; color: var(--muted); }
 .report-text p  { margin-bottom: 0.75rem; }
-.report-text ul { padding-left: 1.25rem; margin-bottom: 0.75rem; }
+ol { list-style-position: inside; }
+.report-text ul, .report-text ol { padding-left: 1.25rem; margin-bottom: 0.75rem; }
 .report-text strong { color: var(--amber); }
 
 /* Cards */
@@ -235,20 +221,9 @@ def generate_html(data: dict, chartjs_src: str | None) -> str:
     date = _html.escape(data["date"])
     r = data["reports"]
 
-    ohlcv = parse_ohlcv(data.get("market_data", ""))
-    rsi = parse_indicator(data.get("market_data", ""), "rsi")
-    macd_line = parse_indicator(data.get("market_data", ""), "macd")
-    macd_sig = parse_indicator(data.get("market_data", ""), "macds")
-    macd_hist = parse_indicator(data.get("market_data", ""), "macdh")
-    sentiment = parse_sentiment(data.get("sentiment_data", ""))
+    chart_data = build_chart_data(data)
     decision, dec_color = detect_decision(r.get("final_decision", ""))
 
-    chart_data = {
-        "price": ohlcv,
-        "rsi": rsi,
-        "macd": {"labels": macd_line["labels"], "macd": macd_line["values"], "signal": macd_sig["values"], "histogram": macd_hist["values"]},
-        "sentiment": sentiment,
-    }
     charts_ok = "true" if chartjs_src else "false"
     chartjs_tag = f"<script>{chartjs_src}</script>" if chartjs_src else ""
 
@@ -492,7 +467,7 @@ if (CHARTS_OK) {{
 
 def main() -> None:
     if len(sys.argv) != 3:
-        print("Usage: generate_report.py <input.json> <output.html>", file=sys.stderr)
+        print("Usage: render_html.py <input.json> <output.html>", file=sys.stderr)
         sys.exit(1)
 
     input_path, output_path = sys.argv[1], sys.argv[2]

@@ -6,11 +6,7 @@ No external LLM API key required — uses your Claude Code subscription.
 ## Prerequisites
 
 ```bash
-# Install TradingAgents data tools (from the sibling repo)
-pip install -e ~/TradingAgents
-
-# Verify installation
-python -c "from tradingagents.dataflows.y_finance import get_YFin_data_online; print('OK')"
+pip install .
 ```
 
 ## Usage
@@ -25,7 +21,8 @@ python -c "from tradingagents.dataflows.y_finance import get_YFin_data_online; p
 ```
 .claude/skills/ticker/SKILL.md   ← Orchestrator (spawns all sub-agents)
 agents/                          ← Role prompts for each sub-agent
-tools/                           ← Data fetching scripts (wrap TradingAgents)
+tools/                           ← Data fetching scripts
+tools/lib.py                     ← Shared dataflow library (yfinance, stockstats)
 ```
 
 ## Architecture

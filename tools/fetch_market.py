@@ -1,61 +1,47 @@
-"""Fetch price history and technical indicators for a ticker."""
-import sys
+"""Fetch price history and technical indicators for a ticker as JSON."""
+import json
 import os
+import sys
 from datetime import datetime, timedelta
 
-def setup():
-    ta_path = os.path.expanduser("~/TradingAgents")
-    if ta_path not in sys.path:
-        sys.path.insert(0, ta_path)
-    from tradingagents.default_config import DEFAULT_CONFIG
-    try:
-        from tradingagents.dataflows.config import set_config
-        set_config(DEFAULT_CONFIG)
-    except Exception:
-        pass
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lib import get_YFin_data_online, get_stock_stats_indicators_window
 
-def main():
+INDICATORS = [
+    "close_50_sma", "close_200_sma", "close_10_ema",
+    "rsi", "macd", "macds", "macdh",
+    "boll", "boll_ub", "boll_lb", "atr",
+]
+
+
+def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: fetch_market.py <TICKER> [YYYY-MM-DD]", file=sys.stderr)
         sys.exit(1)
-
-    setup()
-    from tradingagents.dataflows.y_finance import get_YFin_data_online, get_stock_stats_indicators_window
 
     ticker = sys.argv[1].upper()
     date = sys.argv[2] if len(sys.argv) > 2 else datetime.now().strftime("%Y-%m-%d")
     start_date = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=90)).strftime("%Y-%m-%d")
 
-    print(f"# Market Data: {ticker} as of {date}\n")
+    result = {
+        "ticker": ticker,
+        "date": date,
+        "price_history": get_YFin_data_online(ticker, start_date, date),
+        "indicators": {},
+    }
 
-    # Price history
-    print("## Price History (90 days)\n")
-    try:
-        print(get_YFin_data_online(ticker, start_date, date))
-    except Exception as e:
-        print(f"Error fetching price data: {e}")
-
-    # Technical indicators
-    print("\n## Technical Indicators\n")
-    indicators = [
-        ("close_50_sma", "50-day SMA"),
-        ("close_200_sma", "200-day SMA"),
-        ("close_10_ema", "10-day EMA"),
-        ("rsi", "RSI (14)"),
-        ("macd", "MACD"),
-        ("macds", "MACD Signal"),
-        ("macdh", "MACD Histogram"),
-        ("boll", "Bollinger Middle"),
-        ("boll_ub", "Bollinger Upper"),
-        ("boll_lb", "Bollinger Lower"),
-        ("atr", "ATR"),
-    ]
-    for key, label in indicators:
+    for key in INDICATORS:
         try:
-            data = get_stock_stats_indicators_window(ticker, key, date, 30)
-            print(f"### {label}\n{data}\n")
+            result["indicators"][key] = get_stock_stats_indicators_window(ticker, key, date, 30)
         except Exception as e:
-            print(f"### {label}\nUnavailable: {e}\n")
+            result["indicators"][key] = {
+                "indicator": key, "symbol": ticker,
+                "error": f"Unavailable: {e}",
+                "dates": [], "values": [],
+            }
+
+    print(json.dumps(result, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     main()

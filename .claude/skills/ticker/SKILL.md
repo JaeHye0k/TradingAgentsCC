@@ -1,7 +1,7 @@
 ---
 name: ticker
 description: Multi-agent stock analysis using Claude Code sub-agents — no LLM API key required
-argument-hint: "[TICKER] [--date YYYY-MM-DD] [--rounds N]"
+argument-hint: "[TICKER] [--date YYYY-MM-DD] [--rounds N] [--format html|md|both]"
 triggers:
   - analyze ticker
   - stock analysis
@@ -22,42 +22,78 @@ Follow these phases exactly when invoked.
 
 ---
 
-### Step 0: Parse Arguments & Setup
+### Step 0: Parse Arguments & Confirm Settings
 
-**인수 파싱:**
+> **⚠️ 필수 규칙 (절대 위반 금지):**
+> 사용자가 **명시적 플래그로 지정하지 않은** 모든 설정값은 반드시 `AskUserQuestion`으로 확인받습니다.
+> 인수가 일부만 주어졌더라도, 임의로 기본값(오늘 날짜, 1라운드 등)을 가정해서 진행하지 마세요.
+> 이 규칙은 Step 1로 진행하기 전에 **무조건** 충족되어야 합니다.
 
-`$ARGUMENTS`가 비어있거나 TICKER가 없으면, `AskUserQuestion` 도구로 아래 3가지를 한 번에 질문하세요:
+**1) 인수 토큰화**
 
+`$ARGUMENTS`를 파싱하여 다음 4가지 변수를 결정합니다:
+
+| 변수 | 출처 | 미지정 시 |
+|------|------|-----------|
+| `TICKER` | 첫 번째 비플래그 토큰 (대문자 변환) | `TICKER_GIVEN = false` |
+| `DATE` | `--date YYYY-MM-DD` 플래그 값 | `DATE_GIVEN = false` |
+| `DEBATE_ROUNDS` | `--rounds N` 플래그 값 | `ROUNDS_GIVEN = false` |
+| `FORMAT` | `--format html\|md\|both` 플래그 값 | `FORMAT_GIVEN = false` |
+
+**2) 누락된 설정값 일괄 질문**
+
+`TICKER_GIVEN`, `DATE_GIVEN`, `ROUNDS_GIVEN`, `FORMAT_GIVEN` **중 하나라도 false면**, 누락된 항목만 골라 `AskUserQuestion` **단일 호출**로 한꺼번에 물어봅니다.
+
+> 모든 플래그(`<티커> --date ... --rounds ...`)가 명시된 경우에만 질문을 건너뛸 수 있습니다.
+
+**질문 1 — `TICKER_GIVEN = false`일 때만:**
 ```
-질문 1 — "분석할 티커 심볼을 입력하세요 (예: CEG, AAPL, 005930.KS)"
-  header: "티커 심볼"
-  options: 없음 (자유 입력)
-
-질문 2 — "기준 날짜를 선택하세요"
-  header: "기준 날짜"
-  options:
-    - "오늘 ({TODAY})" → 오늘 날짜 사용
-    - "직접 입력 (YYYY-MM-DD)" → 사용자 입력값 사용
-
-질문 3 — "리서치팀 토론 라운드 수를 선택하세요"
-  header: "토론 라운드"
-  options:
-    - "1라운드 — 빠른 분석 (권장)" → DEBATE_ROUNDS = 1
-    - "2라운드 — 균형 잡힌 분석" → DEBATE_ROUNDS = 2
-    - "3라운드 — 심층 분석" → DEBATE_ROUNDS = 3
+question: "분석할 티커 심볼을 입력하세요 (예: CEG, AAPL, 005930.KS)"
+header:   "티커 심볼"
+options:  자유 입력 (사용자가 'Other'로 직접 입력)
 ```
 
-`$ARGUMENTS`가 있으면 파싱:
-- 첫 번째 토큰 = TICKER (대문자 변환)
-- `--date YYYY-MM-DD` → DATE (없으면 오늘 날짜)
-- `--rounds N` → DEBATE_ROUNDS (없으면 1)
+**질문 2 — `DATE_GIVEN = false`일 때만:**
+```
+question: "기준 날짜를 선택하세요"
+header:   "기준 날짜"
+options:
+  - "오늘 ({TODAY})"        → 오늘 날짜 사용
+  - "직접 입력 (YYYY-MM-DD)" → 사용자 입력값 사용
+```
 
-설정값을 확정한 뒤 출력:
+**질문 3 — `ROUNDS_GIVEN = false`일 때만:**
+```
+question: "리서치팀 토론 라운드 수를 선택하세요"
+header:   "토론 라운드"
+options:
+  - "1라운드 — 빠른 분석 (권장)" → DEBATE_ROUNDS = 1
+  - "2라운드 — 균형 잡힌 분석"   → DEBATE_ROUNDS = 2
+  - "3라운드 — 심층 분석"        → DEBATE_ROUNDS = 3
+```
+
+**질문 4 — `FORMAT_GIVEN = false`일 때만:**
+```
+question: "보고서 출력 형식을 선택하세요"
+header:   "출력 형식"
+options:
+  - "HTML + Markdown 둘 다 (권장)" → FORMAT = "both"
+  - "HTML — 인터랙티브 차트 포함"  → FORMAT = "html"
+  - "Markdown — 텍스트 보고서"     → FORMAT = "md"
+```
+
+**3) 한국 종목 코드 자동 보정**
+
+`TICKER`가 6자리 숫자(예: `005930`)인 경우 → `005930.KS`로 자동 변환 후 사용자에게 알립니다.
+
+**4) 설정값 확정 출력**
+
 ```
 🔍 분석 설정
   티커: {TICKER}
   기준일: {DATE}
   토론 라운드: {DEBATE_ROUNDS}회
+  출력 형식: {FORMAT}
 ```
 
 Set `PROJECT_ROOT` = the directory containing this SKILL.md file's project (e.g., `~/TradingAgentsCC`).
@@ -72,22 +108,45 @@ If this fails, print: `ERROR: Dependencies not installed. Run: pip install .` an
 
 ### Step 1: Fetch All Data (Parallel Bash)
 
+Each fetch script now emits **a single JSON object** on stdout. Pipe each to a per-ticker temp file so downstream steps can load them without re-running yfinance.
+
 Run all four fetch scripts **simultaneously** (parallel Bash calls):
 
 ```bash
-python $PROJECT_ROOT/tools/fetch_market.py {TICKER} {DATE}
-python $PROJECT_ROOT/tools/fetch_news.py {TICKER} {DATE}
-python $PROJECT_ROOT/tools/fetch_fundamentals.py {TICKER} {DATE}
-python $PROJECT_ROOT/tools/fetch_sentiment.py {TICKER} {DATE}
+python $PROJECT_ROOT/tools/fetch_market.py       {TICKER} {DATE} > /tmp/tac_{TICKER}_market.json
+python $PROJECT_ROOT/tools/fetch_news.py         {TICKER} {DATE} > /tmp/tac_{TICKER}_news.json
+python $PROJECT_ROOT/tools/fetch_fundamentals.py {TICKER} {DATE} > /tmp/tac_{TICKER}_fundamentals.json
+python $PROJECT_ROOT/tools/fetch_sentiment.py    {TICKER} {DATE} > /tmp/tac_{TICKER}_sentiment.json
 ```
 
-Store each output as:
-- `MARKET_DATA` ← output of fetch_market.py
-- `NEWS_DATA` ← output of fetch_news.py
-- `FUNDAMENTALS_DATA` ← output of fetch_fundamentals.py
-- `SENTIMENT_DATA` ← output of fetch_sentiment.py
+Store file paths as:
+- `MARKET_JSON_PATH`        = `/tmp/tac_{TICKER}_market.json`
+- `NEWS_JSON_PATH`          = `/tmp/tac_{TICKER}_news.json`
+- `FUNDAMENTALS_JSON_PATH`  = `/tmp/tac_{TICKER}_fundamentals.json`
+- `SENTIMENT_JSON_PATH`     = `/tmp/tac_{TICKER}_sentiment.json`
 
 Print: `✓ Data fetched for {TICKER} as of {DATE}`
+
+---
+
+### Step 1.5: Format Agent Context (Parallel Bash)
+
+Each sub-agent expects a markdown context block in the same shape the old fetch scripts produced. Generate those with `format_agent_context.py` (parallel Bash calls):
+
+```bash
+python $PROJECT_ROOT/tools/format_agent_context.py market       $MARKET_JSON_PATH
+python $PROJECT_ROOT/tools/format_agent_context.py news         $NEWS_JSON_PATH
+python $PROJECT_ROOT/tools/format_agent_context.py fundamentals $FUNDAMENTALS_JSON_PATH
+python $PROJECT_ROOT/tools/format_agent_context.py sentiment    $SENTIMENT_JSON_PATH
+```
+
+Capture each stdout as:
+- `MARKET_DATA`        ← market context markdown
+- `NEWS_DATA`          ← news context markdown
+- `FUNDAMENTALS_DATA`  ← fundamentals context markdown
+- `SENTIMENT_DATA`     ← sentiment context markdown
+
+These variables feed Step 2 exactly as before — agents/*.md prompts remain unchanged.
 
 ---
 
@@ -250,7 +309,7 @@ Store result as `FINAL_DECISION`.
 
 ---
 
-### Step 7: Generate HTML Report
+### Step 7: Assemble Report JSON & Render
 
 **trading_checklist 추출:** TRADING_PLAN 텍스트에서 구체적인 행동 항목을 최대 10개 배열로 추출하세요.  
 예시: `["RSI 60 이하 진입 확인", "1차 목표가 $210 설정", "손절선 $185 설정"]`
@@ -258,14 +317,18 @@ Store result as `FINAL_DECISION`.
 **decision_reasons 추출:** FINAL_DECISION 텍스트에서 핵심 근거를 최대 8개 배열로 추출하세요.  
 예시: `["강한 기술적 모멘텀", "견조한 매출 성장", "AI 사업 확장"]`
 
-**JSON 페이로드 저장** — Write 도구로 `/tmp/tradingagentscc_report_{TICKER}.json`에 저장:
+**최종 JSON 조립** — Step 1의 fetch JSON 4개를 그대로 임베드하고, 분석 보고서를 합쳐 `/tmp/tradingagentscc_report_{TICKER}.json`에 저장합니다. fetch JSON은 Read 도구로 각 `*_JSON_PATH` 파일을 읽어 그대로 객체로 끼워 넣으세요.
+
+> ⚠️ `market_data`, `news_data`, `fundamentals_data`, `sentiment_data` 네 필드는 **반드시 Step 1에서 만든 `/tmp/tac_{TICKER}_*.json` 파일을 Read 도구로 읽어 JSON 객체 그대로 임베드**해야 합니다. 문자열·요약·마크다운 변환본을 넣으면 `render_html.py`의 차트 파서가 빈 배열을 반환하고 차트가 빈 캔버스로 표시됩니다 (stderr에 `[warn] market_data.price_history.close not found ...` 류 경고 출력).
 
 ```json
 {
   "ticker": "{TICKER}",
   "date": "{DATE}",
-  "market_data": "(MARKET_DATA 전체 텍스트)",
-  "sentiment_data": "(SENTIMENT_DATA 전체 텍스트)",
+  "market_data":       { ...MARKET_JSON_PATH 내용 그대로... },
+  "news_data":         { ...NEWS_JSON_PATH 내용 그대로... },
+  "fundamentals_data": { ...FUNDAMENTALS_JSON_PATH 내용 그대로... },
+  "sentiment_data":    { ...SENTIMENT_JSON_PATH 내용 그대로... },
   "reports": {
     "market": "(MARKET_REPORT)",
     "news": "(NEWS_REPORT)",
@@ -285,75 +348,28 @@ Store result as `FINAL_DECISION`.
 }
 ```
 
-**HTML 생성** — Bash 도구로 실행:
+**렌더러 분기** — `FORMAT` 값에 따라 Bash 도구로 실행 (`both`는 둘 다 실행). 두 렌더러는 동일한 입력 JSON을 소비합니다.
 
 ```bash
-python {PROJECT_ROOT}/tools/generate_report.py \
+# FORMAT in ("html", "both")
+python {PROJECT_ROOT}/tools/render_html.py \
   /tmp/tradingagentscc_report_{TICKER}.json \
   {PROJECT_ROOT}/outputs/{DATE}_{TICKER}.html
+
+# FORMAT in ("md", "both")
+python {PROJECT_ROOT}/tools/render_md.py \
+  /tmp/tradingagentscc_report_{TICKER}.json \
+  {PROJECT_ROOT}/outputs/{DATE}_{TICKER}.md
 ```
 
-성공 시 출력:
+성공 시 — 생성된 산출물 경로를 모두 출력하세요:
+
 ```
-✅ 보고서 저장됨: outputs/{DATE}_{TICKER}.html
+✅ HTML 보고서: outputs/{DATE}_{TICKER}.html
+✅ Markdown 보고서: outputs/{DATE}_{TICKER}.md
 브라우저에서 열기: open outputs/{DATE}_{TICKER}.html
 ```
 
-실패(non-zero exit) 시 — 폴백으로 아래 마크다운 형식 출력:
+(FORMAT에 해당하지 않는 줄은 생략.)
 
-```markdown
-# TradingAgentsCC Analysis: {TICKER}
-**Date**: {DATE} | **Generated by**: Claude Code Multi-Agent System
-
----
-
-## 📊 Phase 1: Analyst Team
-
-{MARKET_REPORT}
-
----
-
-{NEWS_REPORT}
-
----
-
-{FUNDAMENTALS_REPORT}
-
----
-
-{SENTIMENT_REPORT}
-
----
-
-## 🔬 Phase 2: Research Team Debate ({DEBATE_ROUNDS}라운드)
-
-{각 라운드별 BULL_REPORTS[R] / BEAR_REPORTS[R] 을 순서대로 출력}
-
-### Research Manager 최종 합성
-{INVESTMENT_PLAN}
-
----
-
-## 💹 Phase 3: Trading Plan
-
-{TRADING_PLAN}
-
----
-
-## ⚖️ Phase 4: Risk Management
-
-### Aggressive Perspective
-{AGGRESSIVE_RISK}
-
-### Conservative Perspective
-{CONSERVATIVE_RISK}
-
-### Neutral Perspective
-{NEUTRAL_RISK}
-
----
-
-## 🎯 Phase 5: Final Decision
-
-{FINAL_DECISION}
-```
+렌더러가 non-zero exit으로 실패하면 stderr를 그대로 보여주고 멈춥니다. 마크다운 출력은 이제 정식 출력이므로 별도 폴백을 두지 않습니다.

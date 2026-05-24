@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# OMC runtime state
+.omc/state/
+
+# Generated outputs
+outputs/
+
+# Internal planning docs
+docs/superpowers/
+docs/ticker-visualization.html

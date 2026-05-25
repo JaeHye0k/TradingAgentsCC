@@ -219,7 +219,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); font
 .report-text h2 { font-size: 1rem; color: var(--cyan); }
 .report-text h3 { font-size: 0.9rem; color: var(--muted); }
 .report-text p  { margin-bottom: 0.75rem; }
-ol { list-style-position: inside; }
 .report-text ul, .report-text ol { padding-left: 1.25rem; margin-bottom: 0.75rem; }
 .report-text strong { color: var(--amber); }
 

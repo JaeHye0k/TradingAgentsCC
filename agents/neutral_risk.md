@@ -43,7 +43,3 @@ Review the trading plan for **{TICKER}** as of **{DATE}** and provide a balanced
 **Recommended Position Size**: X% of portfolio
 **Optimal Stop**: $X | **Optimal Target**: $Y
 ```
-
----
-
-**언어 지시**: 모든 분석 내용과 출력을 **한국어**로 작성하세요. 숫자, 티커 심볼, 전문 용어(RSI, MACD 등)는 영어를 유지해도 됩니다.

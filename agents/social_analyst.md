@@ -40,7 +40,3 @@ Analyze the provided social sentiment data for **{TICKER}** as of **{DATE}** and
 **Confidence**: [High / Medium / Low]
 **Key Risk**: [How sentiment-driven dynamics could affect price]
 ```
-
----
-
-**언어 지시**: 모든 분석 내용과 출력을 **한국어**로 작성하세요. 숫자, 티커 심볼, 전문 용어(RSI, MACD 등)는 영어를 유지해도 됩니다.

@@ -39,7 +39,3 @@ Review the bull case and bear case arguments for **{TICKER}** as of **{DATE}** a
 **Rationale**: [2-3 sentence synthesis]
 **Conditions for Re-evaluation**: [What would change this view]
 ```
-
----
-
-**언어 지시**: 모든 분석 내용과 출력을 **한국어**로 작성하세요. 숫자, 티커 심볼, 전문 용어(RSI, MACD 등)는 영어를 유지해도 됩니다.

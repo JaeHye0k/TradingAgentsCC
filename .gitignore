@@ -9,8 +9,11 @@ __pycache__/
 build/
 dist/
 
-# OMC runtime state
-.omc/state/
+# OMC runtime state (notepad, memory, sessions, state — all local)
+.omc/
+
+# Claude Code sub-agent worktree scratch space
+.claude/worktrees/
 
 # Generated outputs
 outputs/

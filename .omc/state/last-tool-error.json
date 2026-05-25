@@ -1,7 +1,0 @@
-{
-  "tool_name": "Agent",
-  "tool_input_preview": "{\"description\":\"Social sentiment analysis for CEG\",\"prompt\":\"# Social Sentiment Analyst\\n\\nYou are an expert in social media sentiment analysis and retail investor behavior.\\n\\n## Your Task\\n\\nAnalyze...",
-  "error": "Cannot create agent worktree: not in a git repository and no WorktreeCreate hooks are configured. Configure WorktreeCreate/WorktreeRemove hooks in settings.json to use worktree isolation with other VCS systems.",
-  "timestamp": "2026-05-23T10:12:42.672Z",
-  "retry_count": 4
-}

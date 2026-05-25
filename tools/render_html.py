@@ -22,6 +22,57 @@ import markdown as _md
 
 CHARTJS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"
 
+LABELS = {
+    "ko": {
+        "final_decision": "최종 결정",
+        "analysis_summary": "분석 요약",
+        "price_90d": "주가 (90일)",
+        "market_analysis": "시장 분석",
+        "sentiment_dist": "감성 분포 (StockTwits)",
+        "social_analysis": "소셜 분석",
+        "bull_bear_debate": "Bull / Bear 토론",
+        "rm_synthesis": "Research Manager 합성",
+        "trading_checklist": "트레이딩 체크리스트",
+        "trading_plan": "트레이딩 플랜",
+        "risk_compare": "리스크 관점 비교",
+        "decision_reasons": "결정 근거",
+        "full_text": "전문",
+        "close": "종가",
+        "close_90d": "종가 (90일)",
+        "overbought_70": "과매수 (70)",
+        "oversold_30": "과매도 (30)",
+        "round": "라운드",
+        "empty_items": "항목이 없습니다",
+        "empty_debate": "토론 데이터가 없습니다",
+        "report_saved": "보고서 저장됨",
+        "html_lang": "ko",
+    },
+    "en": {
+        "final_decision": "Final Decision",
+        "analysis_summary": "Analysis Summary",
+        "price_90d": "Price (90 days)",
+        "market_analysis": "Market Analysis",
+        "sentiment_dist": "Sentiment Distribution (StockTwits)",
+        "social_analysis": "Social Sentiment",
+        "bull_bear_debate": "Bull / Bear Debate",
+        "rm_synthesis": "Research Manager Synthesis",
+        "trading_checklist": "Trading Checklist",
+        "trading_plan": "Trading Plan",
+        "risk_compare": "Risk Perspectives",
+        "decision_reasons": "Decision Reasons",
+        "full_text": "Full Text",
+        "close": "Close",
+        "close_90d": "Close (90 days)",
+        "overbought_70": "Overbought (70)",
+        "oversold_30": "Oversold (30)",
+        "round": "Round",
+        "empty_items": "No items",
+        "empty_debate": "No debate data",
+        "report_saved": "Report saved",
+        "html_lang": "en",
+    },
+}
+
 
 def fetch_chartjs() -> str | None:
     """Fetch Chart.js minified source from CDN for inline embedding. Returns None on failure."""
@@ -101,9 +152,9 @@ def md_to_html(text: str) -> str:
     return _md.markdown(text, extensions=["extra", "sane_lists"])
 
 
-def _checklist_html(items: list[str], id_prefix: str) -> str:
+def _checklist_html(items: list[str], id_prefix: str, L: dict) -> str:
     if not items:
-        return '<p class="muted-text">항목이 없습니다.</p>'
+        return f'<p class="muted-text">{L["empty_items"]}.</p>'
     rows = "".join(
         f'<label class="check-item"><input type="checkbox" id="{id_prefix}-{i}"> <span>{item}</span></label>\n'
         for i, item in enumerate(items)
@@ -111,13 +162,13 @@ def _checklist_html(items: list[str], id_prefix: str) -> str:
     return f'<div class="checklist">{rows}</div>'
 
 
-def _debate_html(bull_reports: list[str], bear_reports: list[str]) -> str:
+def _debate_html(bull_reports: list[str], bear_reports: list[str], L: dict) -> str:
     rounds = max(len(bull_reports), len(bear_reports))
     if rounds == 0:
-        return '<p class="muted-text">토론 데이터가 없습니다.</p>'
+        return f'<p class="muted-text">{L["empty_debate"]}.</p>'
     parts = []
     for r in range(rounds):
-        parts.append(f'<details open><summary class="debate-summary">라운드 {r + 1}</summary>\n')
+        parts.append(f'<details open><summary class="debate-summary">{L["round"]} {r + 1}</summary>\n')
         if r < len(bull_reports):
             parts.append(f'<div class="debate-bull"><h4>🐂 Bull Researcher</h4><div class="report-text">{md_to_html(bull_reports[r])}</div></div>\n')
         if r < len(bear_reports):
@@ -216,7 +267,8 @@ details { background: var(--surface); border: 1px solid var(--border); border-ra
 """
 
 
-def generate_html(data: dict, chartjs_src: str | None) -> str:
+def generate_html(data: dict, chartjs_src: str | None, lang: str = "ko") -> str:
+    L = LABELS[lang]
     ticker = _html.escape(data["ticker"])
     date = _html.escape(data["date"])
     r = data["reports"]
@@ -227,15 +279,15 @@ def generate_html(data: dict, chartjs_src: str | None) -> str:
     charts_ok = "true" if chartjs_src else "false"
     chartjs_tag = f"<script>{chartjs_src}</script>" if chartjs_src else ""
 
-    checklist_html = _checklist_html(r.get("trading_checklist", []), "trade")
-    reasons_html = _checklist_html(r.get("decision_reasons", []), "dec")
-    debate_html = _debate_html(r.get("bull", []), r.get("bear", []))
+    checklist_html = _checklist_html(r.get("trading_checklist", []), "trade", L)
+    reasons_html = _checklist_html(r.get("decision_reasons", []), "dec", L)
+    debate_html = _debate_html(r.get("bull", []), r.get("bear", []), L)
 
     def section(content_key: str) -> str:
         return md_to_html(r.get(content_key, ""))
 
     return f"""<!DOCTYPE html>
-<html lang="ko">
+<html lang="{L["html_lang"]}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -273,21 +325,21 @@ def generate_html(data: dict, chartjs_src: str | None) -> str:
 <div id="overview" class="tab-panel active">
   <div class="chart-wrap"><canvas id="overview-chart"></canvas></div>
   <div class="decision-card {dec_color}">
-    <div class="label">최종 결정</div>
+    <div class="label">{L["final_decision"]}</div>
     <div class="big-badge">{decision}</div>
   </div>
-  <p class="section-title">분석 요약</p>
+  <p class="section-title">{L["analysis_summary"]}</p>
   <div class="report-text">{section("final_decision")}</div>
 </div>
 
 <div id="market" class="tab-panel">
-  <p class="section-title">주가 (90일)</p>
+  <p class="section-title">{L["price_90d"]}</p>
   <div class="chart-wrap"><canvas id="price-chart"></canvas></div>
   <p class="section-title">RSI</p>
   <div class="chart-wrap"><canvas id="rsi-chart"></canvas></div>
   <p class="section-title">MACD</p>
   <div class="chart-wrap"><canvas id="macd-chart"></canvas></div>
-  <p class="section-title">시장 분석</p>
+  <p class="section-title">{L["market_analysis"]}</p>
   <div class="report-text">{section("market")}</div>
 </div>
 
@@ -300,28 +352,28 @@ def generate_html(data: dict, chartjs_src: str | None) -> str:
 </div>
 
 <div id="sentiment" class="tab-panel">
-  <p class="section-title">감성 분포 (StockTwits)</p>
+  <p class="section-title">{L["sentiment_dist"]}</p>
   <div class="chart-wrap narrow"><canvas id="sentiment-chart"></canvas></div>
-  <p class="section-title">소셜 분석</p>
+  <p class="section-title">{L["social_analysis"]}</p>
   <div class="report-text">{section("social")}</div>
 </div>
 
 <div id="research" class="tab-panel">
-  <p class="section-title">Bull / Bear 토론</p>
+  <p class="section-title">{L["bull_bear_debate"]}</p>
   {debate_html}
-  <p class="section-title">Research Manager 합성</p>
+  <p class="section-title">{L["rm_synthesis"]}</p>
   <div class="report-text">{section("investment_plan")}</div>
 </div>
 
 <div id="trading" class="tab-panel">
-  <p class="section-title">트레이딩 체크리스트</p>
+  <p class="section-title">{L["trading_checklist"]}</p>
   {checklist_html}
-  <p class="section-title">트레이딩 플랜</p>
+  <p class="section-title">{L["trading_plan"]}</p>
   <div class="report-text">{section("trading_plan")}</div>
 </div>
 
 <div id="risk" class="tab-panel">
-  <p class="section-title">리스크 관점 비교</p>
+  <p class="section-title">{L["risk_compare"]}</p>
   <div class="chart-wrap"><canvas id="risk-chart"></canvas></div>
   <div class="risk-cards">
     <div class="risk-card rose">
@@ -341,12 +393,12 @@ def generate_html(data: dict, chartjs_src: str | None) -> str:
 
 <div id="decision" class="tab-panel">
   <div class="decision-card {dec_color}">
-    <div class="label">최종 결정</div>
+    <div class="label">{L["final_decision"]}</div>
     <div class="big-badge">{decision}</div>
   </div>
-  <p class="section-title">결정 근거</p>
+  <p class="section-title">{L["decision_reasons"]}</p>
   {reasons_html}
-  <p class="section-title">전문</p>
+  <p class="section-title">{L["full_text"]}</p>
   <div class="report-text">{section("final_decision")}</div>
 </div>
 
@@ -394,14 +446,14 @@ if (CHARTS_OK) {{
     // Overview chart
     new Chart(document.getElementById('overview-chart'), {{
       type: 'line',
-      data: {{ labels: CD.price.labels, datasets: [lineDataset('종가', CD.price.prices, '#6366f1', true)] }},
+      data: {{ labels: CD.price.labels, datasets: [lineDataset('{L["close"]}', CD.price.prices, '#6366f1', true)] }},
       options: baseOpts
     }});
 
     // Market price chart
     new Chart(document.getElementById('price-chart'), {{
       type: 'line',
-      data: {{ labels: CD.price.labels, datasets: [lineDataset('종가 (90일)', CD.price.prices, '#06b6d4', true)] }},
+      data: {{ labels: CD.price.labels, datasets: [lineDataset('{L["close_90d"]}', CD.price.prices, '#06b6d4', true)] }},
       options: baseOpts
     }});
   }}
@@ -414,8 +466,8 @@ if (CHARTS_OK) {{
       type: 'line',
       data: {{ labels: CD.rsi.labels, datasets: [
         lineDataset('RSI', CD.rsi.values, '#f59e0b', false),
-        {{ type:'line', label:'과매수(70)', data: CD.rsi.labels.map(function(){{return 70;}}), borderColor:'rgba(244,63,94,0.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 }},
-        {{ type:'line', label:'과매도(30)', data: CD.rsi.labels.map(function(){{return 30;}}), borderColor:'rgba(16,185,129,0.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 }}
+        {{ type:'line', label:'{L["overbought_70"]}', data: CD.rsi.labels.map(function(){{return 70;}}), borderColor:'rgba(244,63,94,0.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 }},
+        {{ type:'line', label:'{L["oversold_30"]}', data: CD.rsi.labels.map(function(){{return 30;}}), borderColor:'rgba(16,185,129,0.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 }}
       ] }},
       options: rsiOpts
     }});
@@ -466,25 +518,28 @@ if (CHARTS_OK) {{
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        print("Usage: render_html.py <input.json> <output.html>", file=sys.stderr)
-        sys.exit(1)
+    import argparse
 
-    input_path, output_path = sys.argv[1], sys.argv[2]
+    parser = argparse.ArgumentParser(description="Render TradingAgentsCC HTML report.")
+    parser.add_argument("input", help="Path to analysis JSON")
+    parser.add_argument("output", help="Path to write HTML output")
+    parser.add_argument("--lang", choices=["ko", "en"], default="ko",
+                        help="Output language for section labels (default: ko)")
+    args = parser.parse_args()
 
-    with open(input_path, encoding="utf-8") as f:
+    with open(args.input, encoding="utf-8") as f:
         data = json.load(f)
 
     chartjs_src = fetch_chartjs()
 
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
 
-    html = generate_html(data, chartjs_src)
+    html = generate_html(data, chartjs_src, lang=args.lang)
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(args.output, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"✅ 보고서 저장됨: {output_path}")
+    print(f"✅ {LABELS[args.lang]['report_saved']}: {args.output}")
 
 
 if __name__ == "__main__":

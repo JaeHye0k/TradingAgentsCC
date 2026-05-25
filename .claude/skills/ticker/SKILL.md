@@ -1,7 +1,7 @@
 ---
 name: ticker
 description: Multi-agent stock analysis using Claude Code sub-agents — no LLM API key required
-argument-hint: "[TICKER] [--date YYYY-MM-DD] [--rounds N] [--format html|md|both]"
+argument-hint: "[TICKER] [--date YYYY-MM-DD] [--rounds N] [--format html|md|both] [--lang ko|en]"
 triggers:
   - analyze ticker
   - stock analysis
@@ -39,10 +39,11 @@ Follow these phases exactly when invoked.
 | `DATE` | `--date YYYY-MM-DD` 플래그 값 | `DATE_GIVEN = false` |
 | `DEBATE_ROUNDS` | `--rounds N` 플래그 값 | `ROUNDS_GIVEN = false` |
 | `FORMAT` | `--format html\|md\|both` 플래그 값 | `FORMAT_GIVEN = false` |
+| `LANG` | `--lang ko\|en` 플래그 값 | `LANG_GIVEN = false` |
 
 **2) 누락된 설정값 일괄 질문**
 
-`TICKER_GIVEN`, `DATE_GIVEN`, `ROUNDS_GIVEN`, `FORMAT_GIVEN` **중 하나라도 false면**, 누락된 항목만 골라 `AskUserQuestion` **단일 호출**로 한꺼번에 물어봅니다.
+`TICKER_GIVEN`, `DATE_GIVEN`, `ROUNDS_GIVEN`, `FORMAT_GIVEN`, `LANG_GIVEN` **중 하나라도 false면**, 누락된 항목만 골라 `AskUserQuestion` **단일 호출**로 한꺼번에 물어봅니다.
 
 > 모든 플래그(`<티커> --date ... --rounds ...`)가 명시된 경우에만 질문을 건너뛸 수 있습니다.
 
@@ -82,6 +83,15 @@ options:
   - "Markdown — 텍스트 보고서"     → FORMAT = "md"
 ```
 
+**질문 5 — `LANG_GIVEN = false`일 때만:**
+```
+question: "보고서 출력 언어를 선택하세요"
+header:   "출력 언어"
+options:
+  - "한국어 (권장)" → LANG = "ko"
+  - "English"      → LANG = "en"
+```
+
 **3) 한국 종목 코드 자동 보정**
 
 `TICKER`가 6자리 숫자(예: `005930`)인 경우 → `005930.KS`로 자동 변환 후 사용자에게 알립니다.
@@ -94,6 +104,24 @@ options:
   기준일: {DATE}
   토론 라운드: {DEBATE_ROUNDS}회
   출력 형식: {FORMAT}
+  출력 언어: {LANG}
+```
+
+**5) 언어 지시문(`LANG_INSTRUCTION`) 준비**
+
+`LANG` 값에 따라 다음 텍스트를 `LANG_INSTRUCTION` 변수에 저장합니다. 이 텍스트는 이후 Step 2~6에서 모든 sub-agent 프롬프트 끝에 부착됩니다.
+
+`LANG = "ko"`인 경우 (한국어):
+```
+**언어 지시**: 모든 분석 내용과 출력을 **한국어**로 작성하세요.
+- 전문 용어(RSI, MACD, Forward PE, PEG, ATR, Bollinger Band, EBITDA, FCF, ROE, EPS, HBM, DRAM 등)는 영어 원형을 그대로 유지하세요.
+- 숫자와 티커 심볼은 그대로 유지하세요.
+- 섹션명(Executive Summary → 핵심 요약, Technical Verdict → 기술적 판정, Decision Rationale → 결정 근거, Risk/Reward Summary → 리스크/보상 요약, Key Catalysts → 주요 촉매, Supporting Evidence → 근거, Investment Thesis → 투자 논거, Approved Trade Parameters → 승인된 거래 파라미터, Bull Case / Bear Case → 강세 시나리오 / 약세 시나리오 등)은 **반드시 한국어로 번역**하세요.
+```
+
+`LANG = "en"`인 경우 (영어):
+```
+**Language Instruction**: Write all analysis content and output in **English**. Use standard professional financial terminology. Keep ticker symbols and numbers as-is. Keep section names in English exactly as shown in the Output Format template.
 ```
 
 Set `PROJECT_ROOT` = the directory containing this SKILL.md file's project (e.g., `~/TradingAgentsCC`).
@@ -160,32 +188,40 @@ Read all four agent prompt files **simultaneously**:
 
 Replace `{TICKER}` and `{DATE}` placeholders in each prompt with actual values.
 
+> **언어 부착 규칙 (Step 2~6 공통):** 모든 sub-agent 프롬프트는 다음 패턴으로 조립합니다:
+> ```
+> prompt = agent_prompt_with_placeholders_replaced
+>         + "\n\n" + LANG_INSTRUCTION
+>         + "\n\n---\n\n" + DATA_BLOCK
+> ```
+> 즉 agent 프롬프트 본문 → LANG_INSTRUCTION → 데이터 블록 순.
+
 Then spawn all four agents **in parallel** using the Agent tool (single message, four tool calls):
 
 **Market Analyst Agent:**
 ```
-prompt = market_analyst_prompt + "\n\n---\n\n" + MARKET_DATA
+prompt = market_analyst_prompt + "\n\n" + LANG_INSTRUCTION + "\n\n---\n\n" + MARKET_DATA
 subagent_type = "claude"
 description = "Market technical analysis for {TICKER}"
 ```
 
 **News Analyst Agent:**
 ```
-prompt = news_analyst_prompt + "\n\n---\n\n" + NEWS_DATA
+prompt = news_analyst_prompt + "\n\n" + LANG_INSTRUCTION + "\n\n---\n\n" + NEWS_DATA
 subagent_type = "claude"
 description = "News and events analysis for {TICKER}"
 ```
 
 **Fundamentals Analyst Agent:**
 ```
-prompt = fundamentals_analyst_prompt + "\n\n---\n\n" + FUNDAMENTALS_DATA
+prompt = fundamentals_analyst_prompt + "\n\n" + LANG_INSTRUCTION + "\n\n---\n\n" + FUNDAMENTALS_DATA
 subagent_type = "claude"
 description = "Fundamental financial analysis for {TICKER}"
 ```
 
 **Social Analyst Agent:**
 ```
-prompt = social_analyst_prompt + "\n\n---\n\n" + SENTIMENT_DATA
+prompt = social_analyst_prompt + "\n\n" + LANG_INSTRUCTION + "\n\n---\n\n" + SENTIMENT_DATA
 subagent_type = "claude"
 description = "Social sentiment analysis for {TICKER}"
 ```
@@ -222,6 +258,7 @@ Print: `🔄 토론 라운드 {R}/{DEBATE_ROUNDS} 진행 중...`
   **Bull Researcher** (spawn Agent, wait):
   ```
   prompt = bull_researcher_prompt
+          + "\n\n" + LANG_INSTRUCTION
           + "\n\n---\n\n## 애널리스트 보고서\n\n" + ALL_ANALYST_REPORTS
           + (R > 1 이면: "\n\n---\n\n## 이전 라운드 Bear 주장 (반박 대상)\n\n" + PREV_BEAR)
   ```
@@ -230,6 +267,7 @@ Print: `🔄 토론 라운드 {R}/{DEBATE_ROUNDS} 진행 중...`
   **Bear Researcher** (spawn Agent, wait):
   ```
   prompt = bear_researcher_prompt
+          + "\n\n" + LANG_INSTRUCTION
           + "\n\n---\n\n## 애널리스트 보고서\n\n" + ALL_ANALYST_REPORTS
           + "\n\n---\n\n## 이번 라운드 Bull 주장 (반박 대상)\n\n" + BULL_REPORTS[R]
   ```
@@ -240,6 +278,7 @@ Print: `🔄 토론 라운드 {R}/{DEBATE_ROUNDS} 진행 중...`
 **Research Manager** — 최종 라운드 결과로 합성 (spawn Agent, wait):
 ```
 prompt = research_manager_prompt
+        + "\n\n" + LANG_INSTRUCTION
         + "\n\n---\n\n## 전체 토론 요약 ({DEBATE_ROUNDS}라운드)\n\n"
         + (각 라운드 Bull/Bear 보고서를 "### 라운드 N Bull\n...\n### 라운드 N Bear\n..." 형식으로 전부 포함)
 ```
@@ -254,6 +293,7 @@ Print: `✓ Phase 2 complete — {DEBATE_ROUNDS}라운드 토론 완료`
 Spawn one Agent (wait for result):
 ```
 prompt = trader_prompt (from agents/trader.md, {TICKER}/{DATE} replaced)
+        + "\n\n" + LANG_INSTRUCTION
         + "\n\n---\n\n## Investment Plan\n\n" + INVESTMENT_PLAN
         + "\n\n---\n\n## Analyst Context\n\n" + ALL_ANALYST_REPORTS
 ```
@@ -274,17 +314,17 @@ Spawn three agents **in parallel**:
 
 **Aggressive Risk Agent:**
 ```
-prompt = aggressive_risk_prompt (agents/aggressive_risk.md) + "\n\n---\n\n" + FULL_CONTEXT
+prompt = aggressive_risk_prompt (agents/aggressive_risk.md) + "\n\n" + LANG_INSTRUCTION + "\n\n---\n\n" + FULL_CONTEXT
 ```
 
 **Conservative Risk Agent:**
 ```
-prompt = conservative_risk_prompt (agents/conservative_risk.md) + "\n\n---\n\n" + FULL_CONTEXT
+prompt = conservative_risk_prompt (agents/conservative_risk.md) + "\n\n" + LANG_INSTRUCTION + "\n\n---\n\n" + FULL_CONTEXT
 ```
 
 **Neutral Risk Agent:**
 ```
-prompt = neutral_risk_prompt (agents/neutral_risk.md) + "\n\n---\n\n" + FULL_CONTEXT
+prompt = neutral_risk_prompt (agents/neutral_risk.md) + "\n\n" + LANG_INSTRUCTION + "\n\n---\n\n" + FULL_CONTEXT
 ```
 
 Wait for all three. Store as `AGGRESSIVE_RISK`, `CONSERVATIVE_RISK`, `NEUTRAL_RISK`.
@@ -298,6 +338,7 @@ Print: `✓ Phase 4 complete — risk assessments done`
 Spawn one Agent (wait for result):
 ```
 prompt = portfolio_manager_prompt (agents/portfolio_manager.md, {TICKER}/{DATE} replaced)
+        + "\n\n" + LANG_INSTRUCTION
         + "\n\n---\n\n## Analyst Reports\n\n" + ALL_ANALYST_REPORTS
         + "\n\n---\n\n## Investment Plan\n\n" + INVESTMENT_PLAN
         + "\n\n---\n\n## Trading Plan\n\n" + TRADING_PLAN
@@ -354,12 +395,14 @@ Store result as `FINAL_DECISION`.
 # FORMAT in ("html", "both")
 python {PROJECT_ROOT}/tools/render_html.py \
   /tmp/tradingagentscc_report_{TICKER}.json \
-  {PROJECT_ROOT}/outputs/{DATE}_{TICKER}.html
+  {PROJECT_ROOT}/outputs/{DATE}_{TICKER}.html \
+  --lang {LANG}
 
 # FORMAT in ("md", "both")
 python {PROJECT_ROOT}/tools/render_md.py \
   /tmp/tradingagentscc_report_{TICKER}.json \
-  {PROJECT_ROOT}/outputs/{DATE}_{TICKER}.md
+  {PROJECT_ROOT}/outputs/{DATE}_{TICKER}.md \
+  --lang {LANG}
 ```
 
 성공 시 — 생성된 산출물 경로를 모두 출력하세요:

@@ -1,0 +1,49 @@
+TradingAgentsCC
+Copyright 2026 JaeHye0k <ahhps2012@naver.com>
+
+This product includes software developed as a derivative work of
+TradingAgents (https://github.com/TauricResearch/TradingAgents),
+Copyright 2025 Tauric Research, licensed under the Apache License,
+Version 2.0.
+
+--------------------------------------------------------------------
+Significant modifications from the original work
+--------------------------------------------------------------------
+
+- Replaced LangGraph-based orchestration with Claude Code sub-agent
+  dispatch (the Task tool), so the pipeline runs natively inside the
+  Claude Code CLI without an external graph framework.
+- Removed external LLM provider dependencies (OpenAI, Anthropic API,
+  Google, xAI, DeepSeek, Qwen, GLM, MiniMax, OpenRouter, Ollama, etc.).
+  The system now runs entirely on the user's Claude Code subscription;
+  no separate LLM API key is required.
+- Reimplemented agent definitions as Claude Code agent markdown files
+  under `agents/`.
+- Added bilingual (Korean / English) HTML and Markdown report
+  rendering via `tools/render_html.py` and `tools/render_md.py`,
+  switchable through the `--lang` flag.
+- Replaced FinnHub / Tushare / paid news data sources with yfinance
+  (price, technicals, news, fundamentals), Reddit, and StockTwits.
+- Repackaged as a Claude Code plugin with a `/ticker` slash-command
+  skill at `.claude/skills/ticker/SKILL.md`.
+
+--------------------------------------------------------------------
+Academic citation for the original research
+--------------------------------------------------------------------
+
+If you use this software in academic work, please cite the original
+TradingAgents paper:
+
+  Yijia Xiao, Edward Sun, Di Luo, Wei Wang.
+  "TradingAgents: Multi-Agents LLM Financial Trading Framework."
+  arXiv:2412.20138, 2025.
+  https://arxiv.org/abs/2412.20138
+
+  @misc{xiao2025tradingagentsmultiagentsllmfinancial,
+    title         = {TradingAgents: Multi-Agents LLM Financial Trading Framework},
+    author        = {Yijia Xiao and Edward Sun and Di Luo and Wei Wang},
+    year          = {2025},
+    eprint        = {2412.20138},
+    archivePrefix = {arXiv},
+    primaryClass  = {q-fin.TR}
+  }

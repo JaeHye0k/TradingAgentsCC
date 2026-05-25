@@ -5,18 +5,15 @@ requiring a local TradingAgents installation.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
 import time
 from datetime import datetime
 from typing import Iterable, Optional
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 import pandas as pd
+import requests
 import yfinance as yf
 from dateutil.relativedelta import relativedelta
 from stockstats import wrap
@@ -83,6 +80,11 @@ def yf_retry(func, max_retries=3, base_delay=2.0):
 
 def _clean_dataframe(data: pd.DataFrame) -> pd.DataFrame:
     """Normalize a stock DataFrame for stockstats: parse dates, drop invalid rows, fill price gaps."""
+    if "Date" not in data.columns:
+        for candidate in ("Datetime", "date", "datetime", "index"):
+            if candidate in data.columns:
+                data = data.rename(columns={candidate: "Date"})
+                break
     data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
     data = data.dropna(subset=["Date"])
     price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
@@ -629,21 +631,27 @@ def get_global_news_yfinance(curr_date: str, look_back_days: Optional[int] = Non
 # Social sentiment
 # ---------------------------------------------------------------------------
 
-_REDDIT_API = "https://www.reddit.com/r/{sub}/search.json?{qs}"
+_REDDIT_API = "https://www.reddit.com/r/{sub}/search.json"
 _STOCKTWITS_API = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
 _UA = "tradingagentscc/0.1"
+_HTTP_HEADERS = {"User-Agent": _UA, "Accept": "application/json"}
 
 DEFAULT_SUBREDDITS = ("wallstreetbets", "stocks", "investing")
 
 
+def _http_timeout(timeout: float) -> tuple:
+    """Split a single-value timeout into (connect, read) for requests."""
+    return (min(timeout, 5.0), timeout)
+
+
 def _fetch_subreddit(ticker: str, sub: str, limit: int, timeout: float) -> list:
-    qs = urlencode({"q": ticker, "restrict_sr": "on", "sort": "new", "t": "week", "limit": limit})
-    url = _REDDIT_API.format(sub=sub, qs=qs)
-    req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
+    url = _REDDIT_API.format(sub=sub)
+    params = {"q": ticker, "restrict_sr": "on", "sort": "new", "t": "week", "limit": limit}
     try:
-        with urlopen(req, timeout=timeout) as resp:
-            payload = json.loads(resp.read())
-    except (HTTPError, URLError, json.JSONDecodeError, TimeoutError) as exc:
+        resp = requests.get(url, params=params, headers=_HTTP_HEADERS, timeout=_http_timeout(timeout))
+        resp.raise_for_status()
+        payload = resp.json()
+    except (requests.RequestException, ValueError) as exc:
         logger.warning("Reddit fetch failed for r/%s · %s: %s", sub, ticker, exc)
         return []
     children = (payload.get("data") or {}).get("children") or []
@@ -700,11 +708,11 @@ def fetch_stocktwits_messages(ticker: str, limit: int = 30, timeout: float = 10.
         "messages": [],
     }
     url = _STOCKTWITS_API.format(ticker=ticker.upper())
-    req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read())
-    except (HTTPError, URLError, json.JSONDecodeError, TimeoutError) as exc:
+        resp = requests.get(url, headers=_HTTP_HEADERS, timeout=_http_timeout(timeout))
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as exc:
         logger.warning("StockTwits fetch failed for %s: %s", ticker, exc)
         base["error"] = f"stocktwits unavailable: {type(exc).__name__}"
         return base

@@ -1,0 +1,36 @@
+{
+  "name": "tradingagentscc",
+  "owner": {
+    "name": "JaeHye0k",
+    "email": "ahhps2012@naver.com",
+    "url": "https://github.com/JaeHye0k"
+  },
+  "metadata": {
+    "description": "Marketplace for TradingAgentsCC — multi-agent stock analysis on Claude Code with no separate LLM API key.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "tradingagentscc",
+      "source": "./",
+      "description": "Multi-agent stock analysis on Claude Code — a port of TauricResearch/TradingAgents that needs no separate LLM API key.",
+      "version": "0.1.0",
+      "author": {
+        "name": "JaeHye0k",
+        "email": "ahhps2012@naver.com",
+        "url": "https://github.com/JaeHye0k"
+      },
+      "homepage": "https://github.com/JaeHye0k/TradingAgentsCC",
+      "repository": "https://github.com/JaeHye0k/TradingAgentsCC",
+      "license": "Apache-2.0",
+      "keywords": [
+        "trading",
+        "stocks",
+        "claude-code",
+        "multi-agent",
+        "yfinance",
+        "finance"
+      ]
+    }
+  ]
+}

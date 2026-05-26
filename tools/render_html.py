@@ -98,10 +98,28 @@ def build_chart_data(data: dict) -> dict:
         i = indicators.get(key) or {}
         return {"labels": i.get("dates", []), "values": i.get("values", [])}
 
-    rsi = _ind("rsi")
+    # Drop non-trading days (None values) so Chart.js renders a continuous line.
+    # Indicator arrays from lib.py include every calendar day with None for
+    # weekends/holidays; the price chart already contains only trading days.
+    def _drop_none(dates: list, *value_lists: list) -> tuple[list, list[list]]:
+        keep = [
+            i for i in range(len(dates))
+            if all(i < len(v) and v[i] is not None for v in value_lists)
+        ]
+        return ([dates[i] for i in keep],
+                [[v[i] for i in keep] for v in value_lists])
+
+    rsi_raw = _ind("rsi")
+    rsi_labels, (rsi_values,) = _drop_none(rsi_raw["labels"], rsi_raw["values"])
+    rsi = {"labels": rsi_labels, "values": rsi_values}
+
     macd_line = _ind("macd")
     macd_sig = _ind("macds")
     macd_hist = _ind("macdh")
+    macd_labels, (macd_vals, sig_vals, hist_vals) = _drop_none(
+        macd_line["labels"],
+        macd_line["values"], macd_sig["values"], macd_hist["values"],
+    )
 
     st = sentiment.get("stocktwits") or {}
     sent = {
@@ -112,7 +130,7 @@ def build_chart_data(data: dict) -> dict:
 
     if not price["labels"]:
         print("[warn] market_data.price_history.close not found — overview/price/sparkline charts disabled.", file=sys.stderr)
-    if not rsi["labels"]:
+    if not rsi_raw["labels"]:
         print("[warn] market_data.indicators.rsi not found — RSI chart disabled.", file=sys.stderr)
     if not macd_line["labels"]:
         print("[warn] market_data.indicators.macd not found — MACD chart disabled.", file=sys.stderr)
@@ -123,10 +141,10 @@ def build_chart_data(data: dict) -> dict:
         "price": price,
         "rsi": rsi,
         "macd": {
-            "labels": macd_line["labels"],
-            "macd": macd_line["values"],
-            "signal": macd_sig["values"],
-            "histogram": macd_hist["values"],
+            "labels": macd_labels,
+            "macd": macd_vals,
+            "signal": sig_vals,
+            "histogram": hist_vals,
         },
         "sentiment": sent,
     }
@@ -421,7 +439,28 @@ if (CHARTS_OK) {{
   var textColor = '#8b949e';
   var baseOpts = {{
     responsive: true,
-    plugins: {{ legend: {{ labels: {{ color: textColor }} }} }},
+    interaction: {{ mode: 'index', intersect: false }},
+    plugins: {{
+      legend: {{ labels: {{ color: textColor }} }},
+      tooltip: {{
+        enabled: true,
+        backgroundColor: 'rgba(22,27,34,0.95)',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        titleColor: '#e6edf3',
+        bodyColor: '#e6edf3',
+        padding: 10,
+        cornerRadius: 6,
+        displayColors: true,
+        callbacks: {{
+          label: function(ctx) {{
+            var v = ctx.parsed.y;
+            if (v === null || v === undefined) return ctx.dataset.label;
+            return ctx.dataset.label + ': ' + (Math.abs(v) >= 100 ? v.toFixed(2) : v.toFixed(4));
+          }}
+        }}
+      }}
+    }},
     scales: {{
       x: {{ ticks: {{ color: textColor, maxTicksLimit: 8 }}, grid: {{ color: gridColor }} }},
       y: {{ ticks: {{ color: textColor }}, grid: {{ color: gridColor }} }}
@@ -431,7 +470,9 @@ if (CHARTS_OK) {{
   function lineDataset(label, data, color, fill) {{
     return {{ type:'line', label:label, data:data, borderColor:color,
               backgroundColor: fill ? color.replace(')',',0.12)').replace('rgb','rgba') : 'transparent',
-              borderWidth:2, pointRadius:0, fill:!!fill }};
+              borderWidth:2, pointRadius:0, pointHoverRadius:5, pointHitRadius:20,
+              pointHoverBackgroundColor:color, pointHoverBorderColor:'#fff', pointHoverBorderWidth:2,
+              fill:!!fill }};
   }}
 
   // Sparkline (header)
